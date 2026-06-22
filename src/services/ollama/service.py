@@ -22,7 +22,7 @@ Design decisions:
 
 Usage:
     from arxiv_rag_curator.services.ollama.service import OllamaService
-    svc = OllamaService(url="http://localhost:11434", model="llama3.2:3b")
+    svc = OllamaService(url="http://localhost:11434", model="llama3.2:1b")
     answer = svc.generate(prompt)
     for token in svc.stream(prompt):
         print(token, end="", flush=True)
@@ -45,7 +45,7 @@ DEFAULT_REPEAT_PENALTY = 1.1    # discourage verbatim repetition
 # HTTP timeouts
 HEALTH_TIMEOUT   = 5
 GENERATE_TIMEOUT = 180   # generation can take a while on CPU
-PULL_TIMEOUT     = 600   # model download: ~2GB for llama3.2:3b
+PULL_TIMEOUT     = 600   # model download: ~2GB for llama3.2:1b
 
 
 class OllamaService:
@@ -59,7 +59,7 @@ class OllamaService:
     def __init__(
         self,
         url:   str = "http://localhost:11434",
-        model: str = "llama3.2:3b",
+        model: str = "llama3.2:1b",
     ):
         self._url   = url.rstrip("/")
         self._model = model
@@ -104,10 +104,10 @@ class OllamaService:
         Streaming generation — yields one token at a time.
 
         Ollama returns NDJSON with stream=True:
-          {\"model\": \"llama3.2:3b\", \"response\": \"The\", \"done\": false}
-          {\"model\": \"llama3.2:3b\", \"response\": \" transformer\", \"done\": false}
+          {\"model\": \"llama3.2:1b\", \"response\": \"The\", \"done\": false}
+          {\"model\": \"llama3.2:1b\", \"response\": \" transformer\", \"done\": false}
           ...
-          {\"model\": \"llama3.2:3b\", \"response\": \"\", \"done\": true}
+          {\"model\": \"llama3.2:1b\", \"response\": \"\", \"done\": true}
 
         This generator reads each line and yields the \"response\" field.
         The FastAPI route wraps these yields into SSE events.
@@ -157,7 +157,7 @@ class OllamaService:
         """
         Pull the configured model if it isn't already downloaded.
 
-        Logs progress — pulling llama3.2:3b downloads ~2GB.
+        Logs progress — pulling llama3.2:1b downloads ~2GB.
         Called once on startup so the first real query doesn't stall.
         """
         available = self.list_models()
