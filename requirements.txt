@@ -4,3 +4,4 @@ pydantic-settings
 psycopg2-binary
 opensearch-py
 requests
+gradio
