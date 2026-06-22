@@ -1,14 +1,15 @@
 """
 arXiv RAG Curator — FastAPI entry point.
 
-Updated to register the hybrid search router and run chunk indexer setup
-on startup (creates chunks index + RRF pipeline if not already present).
+Updated to:
+  - Register the ask router (/api/v1/ask and /api/v1/ask/stream)
+  - Pull the Ollama model on startup if not already cached
+  - Surface LLM status in the health endpoint
 """
 
 import logging
 from contextlib import asynccontextmanager
 
-import requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,6 +20,7 @@ from ..core.search import check_health as os_health
 from ..core.search import init_index
 from .routers.search import router as search_router
 from .routers.hybrid_search import router as hybrid_router
+from .routers.ask import router as ask_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,34 +33,30 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting arXiv RAG Curator API...")
 
-    # Core infrastructure
+    # Database + BM25 search index
     init_connection_pool()
     init_schema()
-    init_index()   # BM25 papers index
+    init_index()
 
-    # Chunk index + RRF pipeline (for hybrid search)
+    # Chunk index + RRF pipeline
     try:
         from ..services.opensearch.factory import make_opensearch_client
         from ..services.embeddings.factory import make_embeddings_service
         from ..services.opensearch.chunk_indexer import ChunkIndexer
         from ..core.database import get_db
-
-        indexer = ChunkIndexer(
-            os_client      = make_opensearch_client(),
-            embeddings_svc = make_embeddings_service(),
-            db             = get_db,
-        )
-        indexer.setup()   # creates chunks index + RRF pipeline if absent
-        logger.info("Chunk indexer setup complete")
+        ChunkIndexer(make_opensearch_client(), make_embeddings_service(), get_db).setup()
     except Exception as exc:
-        logger.warning("Chunk indexer setup failed (hybrid search may not work): %s", exc)
+        logger.warning("Chunk indexer setup failed: %s", exc)
 
-    if settings.jina_api_key:
-        logger.info("Jina API key detected — hybrid search enabled")
-    else:
-        logger.info("No Jina API key — hybrid search will fall back to BM25")
+    # Ollama model — pull if not cached (non-blocking: runs async)
+    try:
+        from ..services.ollama.factory import make_ollama_service
+        ollama = make_ollama_service()
+        ollama.ensure_model()
+    except Exception as exc:
+        logger.warning("Ollama model ensure failed: %s", exc)
 
-    logger.info("API ready.")
+    logger.info("Startup complete. API ready.")
     yield
 
     close_connection_pool()
@@ -69,9 +67,10 @@ app = FastAPI(
     title="arXiv RAG Curator API",
     description=(
         "Production RAG system for arXiv papers. "
-        "BM25 keyword search, hybrid semantic search, and LLM-powered Q&A."
+        "Hybrid BM25 + semantic search, local LLM generation via Ollama, "
+        "streaming responses, and Gradio interface."
     ),
-    version="0.3.0",
+    version="0.4.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,
@@ -86,20 +85,23 @@ app.add_middleware(
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-app.include_router(search_router)    # /api/v1/search  (BM25 on papers index)
-app.include_router(hybrid_router)    # /api/v1/hybrid-search (chunks index)
+app.include_router(search_router)   # /api/v1/search
+app.include_router(hybrid_router)   # /api/v1/hybrid-search
+app.include_router(ask_router)      # /api/v1/ask  +  /api/v1/ask/stream
 
 
 @app.get("/")
 async def root():
     return {
-        "service":       "arXiv RAG Curator",
-        "version":       "0.3.0",
-        "docs":          "/docs",
+        "service":        "arXiv RAG Curator",
+        "version":        "0.4.0",
+        "docs":           "/docs",
         "endpoints": {
-            "bm25_search":   "/api/v1/search",
-            "hybrid_search": "/api/v1/hybrid-search",
-            "health":        "/health",
+            "bm25_search":    "/api/v1/search",
+            "hybrid_search":  "/api/v1/hybrid-search",
+            "ask":            "/api/v1/ask",
+            "ask_stream":     "/api/v1/ask/stream",
+            "health":         "/health",
         },
         "hybrid_enabled": bool(settings.jina_api_key),
     }
@@ -110,15 +112,16 @@ async def health_check():
     postgres    = db_health()
     opensearch_ = os_health()
 
+    # Ollama health
     try:
-        r = requests.get(f"{settings.ollama_url}/api/tags", timeout=3)
-        ollama = {"status": "healthy"} if r.status_code == 200 else {"status": "unhealthy"}
+        from ..services.ollama.factory import make_ollama_service
+        ollama = make_ollama_service().check_health()
     except Exception as exc:
         ollama = {"status": "unhealthy", "error": str(exc)}
 
     embedding = {
-        "status":   "enabled" if settings.jina_api_key else "disabled",
-        "reason":   None if settings.jina_api_key else "JINA_API_KEY not set",
+        "status":  "enabled" if settings.jina_api_key else "disabled",
+        "reason":  None if settings.jina_api_key else "JINA_API_KEY not set",
         "fallback": "bm25",
     }
 
@@ -128,13 +131,13 @@ async def health_check():
     )
 
     return {
-        "status":   "healthy" if all_critical else "degraded",
-        "version":  "0.3.0",
+        "status":  "healthy" if all_critical else "degraded",
+        "version": "0.4.0",
         "services": {
-            "postgresql":  postgres,
-            "opensearch":  opensearch_,
-            "ollama":      ollama,
-            "embeddings":  embedding,
+            "postgresql": postgres,
+            "opensearch": opensearch_,
+            "ollama":     ollama,
+            "embeddings": embedding,
         },
     }
 
