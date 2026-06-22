@@ -5,3 +5,6 @@ psycopg2-binary
 opensearch-py
 requests
 gradio
+arxiv
+httpx
+docling
