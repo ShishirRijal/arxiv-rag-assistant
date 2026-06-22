@@ -83,12 +83,22 @@ CREATE TABLE IF NOT EXISTS papers (
     -- PDF ingestion columns (added in arxiv-ingestion phase)
     pdf_url      TEXT,
     full_text    TEXT,
+    sections     JSONB,
     pdf_parsed   BOOLEAN DEFAULT FALSE,
     parse_error  TEXT,
 
     created_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+"""
+
+_ALTER_PAPERS_TABLE = """
+ALTER TABLE papers
+    ADD COLUMN IF NOT EXISTS pdf_url TEXT,
+    ADD COLUMN IF NOT EXISTS full_text TEXT,
+    ADD COLUMN IF NOT EXISTS sections JSONB,
+    ADD COLUMN IF NOT EXISTS pdf_parsed BOOLEAN DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS parse_error TEXT;
 """
 
 _CREATE_INDEXES = """
@@ -134,6 +144,7 @@ def init_schema() -> None:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(_CREATE_PAPERS_TABLE)
+        cursor.execute(_ALTER_PAPERS_TABLE)
         cursor.execute(_CREATE_INDEXES)
         cursor.execute(_CREATE_TRIGGER)
         logger.info("Database schema initialised")
