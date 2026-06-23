@@ -32,8 +32,9 @@ Usage:
 """
 
 import logging
+import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Generator, Optional
 
@@ -42,6 +43,19 @@ from ..opensearch.hybrid_service import HybridSearchService
 from .context_builder import ContextBuilder, ContextSource
 
 logger = logging.getLogger(__name__)
+
+_REFUSAL_ANSWER = (
+    "I couldn't find relevant evidence in the indexed papers to answer that "
+    "question. Try asking about the papers currently in the corpus, or ingest "
+    "more relevant papers first."
+)
+
+_STOPWORDS = {
+    "a", "an", "and", "are", "as", "at", "be", "by", "do", "does", "for",
+    "from", "how", "in", "is", "it", "of", "on", "or", "that", "the",
+    "their", "this", "to", "what", "when", "where", "which", "why", "with",
+    "you", "your", "explain", "describe", "tell", "about", "system",
+}
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
@@ -108,6 +122,20 @@ class RAGPipeline:
         )
 
         hits = self._hits_to_dicts(search_result.hits)
+        if not self._has_sufficient_evidence(question, hits):
+            took_ms = int((time.perf_counter() - t0) * 1000)
+            logger.info(
+                "RAG ask refused: query=%r mode=%s chunks=%d took=%dms",
+                question, search_result.search_mode, len(hits), took_ms,
+            )
+            return RAGResponse(
+                question=question,
+                answer=_REFUSAL_ANSWER,
+                sources=[],
+                search_mode=search_result.search_mode,
+                n_chunks=0,
+                took_ms=took_ms,
+            )
 
         # 2. Build prompt
         prompt, sources = self._context.build(question, hits)
@@ -164,6 +192,12 @@ class RAGPipeline:
         )
 
         hits            = self._hits_to_dicts(search_result.hits)
+        if not self._has_sufficient_evidence(question, hits):
+            yield ("token", _REFUSAL_ANSWER)
+            yield ("sources", [])
+            yield ("done", None)
+            return
+
         prompt, sources = self._context.build(question, hits)
 
         # Stream tokens from Ollama
@@ -183,10 +217,62 @@ class RAGPipeline:
             {
                 "arxiv_id":   h.arxiv_id,
                 "title":      h.title,
+                "abstract":   h.abstract,
                 "chunk_text": h.chunk_text,
             }
             for h in hits
         ]
+
+    @staticmethod
+    def _tokenise(text: str) -> set[str]:
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]+", text.lower())
+            if len(token) > 2 and token not in _STOPWORDS
+        }
+
+    @classmethod
+    def _has_sufficient_evidence(cls, question: str, hits: list[dict]) -> bool:
+        """
+        Refuse clearly out-of-domain questions before calling the LLM.
+
+        With a tiny corpus, OpenSearch will always return "best available"
+        chunks, even when they are not truly relevant. We require meaningful
+        lexical overlap between the user's question and the retrieved text.
+        """
+        if not hits:
+            return False
+
+        query_terms = cls._tokenise(question)
+        if not query_terms:
+            return False
+
+        max_overlap = 0
+        max_metadata_overlap = 0
+        supporting_hits = 0
+        metadata_supporting_hits = 0
+        for hit in hits:
+            doc_text = " ".join([
+                hit.get("title", ""),
+                hit.get("chunk_text", "")[:1200],
+            ])
+            metadata_text = " ".join([
+                hit.get("title", ""),
+                hit.get("abstract", "")[:800],
+            ])
+            overlap = len(query_terms & cls._tokenise(doc_text))
+            metadata_overlap = len(query_terms & cls._tokenise(metadata_text))
+            max_overlap = max(max_overlap, overlap)
+            max_metadata_overlap = max(max_metadata_overlap, metadata_overlap)
+            if overlap > 0:
+                supporting_hits += 1
+            if metadata_overlap > 0:
+                metadata_supporting_hits += 1
+
+        if len(query_terms) == 1:
+            return metadata_supporting_hits >= 1
+
+        return max_metadata_overlap >= 1 and max_overlap >= 2
 
     @staticmethod
     def _source_to_dict(s: ContextSource) -> dict:
