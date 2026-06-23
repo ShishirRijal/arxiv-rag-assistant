@@ -101,7 +101,8 @@ class ContextBuilder:
             return no_context_prompt, []
 
         context_parts: list[str] = []
-        sources:        list[ContextSource] = []
+        sources: list[ContextSource] = []
+        seen_arxiv_ids: set[str] = set()
 
         for i, hit in enumerate(selected):
             raw_text = hit.get("chunk_text", "")
@@ -112,12 +113,15 @@ class ContextBuilder:
                 f"[{i+1}] Paper: \"{hit.get('title', 'Unknown')}\" "
                 f"(arxiv:{hit.get('arxiv_id', '')})\n{text}"
             )
-            sources.append(ContextSource(
-                index    = i + 1,
-                arxiv_id = hit.get("arxiv_id", ""),
-                title    = hit.get("title", "Unknown"),
-                url      = f"https://arxiv.org/abs/{hit.get('arxiv_id', '')}",
-            ))
+            arxiv_id = hit.get("arxiv_id", "")
+            if arxiv_id not in seen_arxiv_ids:
+                seen_arxiv_ids.add(arxiv_id)
+                sources.append(ContextSource(
+                    index=len(sources) + 1,
+                    arxiv_id=arxiv_id,
+                    title=hit.get("title", "Unknown"),
+                    url=f"https://arxiv.org/abs/{arxiv_id}",
+                ))
 
         context_str = "\n\n".join(context_parts)
         prompt      = self._assemble_prompt(question, context_str)
