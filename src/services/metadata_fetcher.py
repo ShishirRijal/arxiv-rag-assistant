@@ -34,6 +34,8 @@ from contextlib import contextmanager
 from datetime import date
 from typing import Callable, Optional
 
+from psycopg2.extras import Json
+
 from .arxiv.client import ArxivClient
 from .pdf_parser.downloader import PDFDownloader
 from .pdf_parser.parser import PDFParser
@@ -47,11 +49,11 @@ logger = logging.getLogger(__name__)
 _UPSERT_SQL = """
 INSERT INTO papers (
     arxiv_id, title, abstract, authors, categories,
-    published_at, pdf_url, full_text, pdf_parsed, parse_error
+    published_at, pdf_url, full_text, sections, pdf_parsed, parse_error
 )
 VALUES (
     %(arxiv_id)s, %(title)s, %(abstract)s, %(authors)s, %(categories)s,
-    %(published_at)s, %(pdf_url)s, %(full_text)s, %(pdf_parsed)s, %(parse_error)s
+    %(published_at)s, %(pdf_url)s, %(full_text)s, %(sections)s, %(pdf_parsed)s, %(parse_error)s
 )
 ON CONFLICT (arxiv_id) DO UPDATE SET
     title        = EXCLUDED.title,
@@ -61,6 +63,7 @@ ON CONFLICT (arxiv_id) DO UPDATE SET
     pdf_url      = EXCLUDED.pdf_url,
     -- COALESCE: don't overwrite good existing text with NULL from a failed re-parse
     full_text    = COALESCE(EXCLUDED.full_text, papers.full_text),
+    sections     = COALESCE(EXCLUDED.sections, papers.sections),
     -- OR: once successfully parsed, stays parsed (even if a re-run fails)
     pdf_parsed   = EXCLUDED.pdf_parsed OR papers.pdf_parsed,
     parse_error  = EXCLUDED.parse_error,
@@ -176,9 +179,10 @@ class MetadataFetcher:
                     cursor = conn.cursor()
                     cursor.execute(
                         "UPDATE papers SET full_text=%(text)s, pdf_parsed=%(ok)s, "
-                        "parse_error=%(err)s, updated_at=NOW() WHERE arxiv_id=%(id)s",
+                        "sections=%(sections)s, parse_error=%(err)s, updated_at=NOW() WHERE arxiv_id=%(id)s",
                         {
                             "text": parsed.full_text or None,
+                            "sections": Json(parsed.sections) if parsed.parse_success else None,
                             "ok":   parsed.parse_success,
                             "err":  parsed.error_message or None,
                             "id":   arxiv_id,
@@ -272,6 +276,7 @@ class MetadataFetcher:
                 "published_at": paper.published_at,
                 "pdf_url":     paper.pdf_url,
                 "full_text":   parsed.full_text if parsed.parse_success else None,
+                "sections":    Json(parsed.sections) if parsed.parse_success else None,
                 "pdf_parsed":  parsed.parse_success,
                 "parse_error": parsed.error_message if not parsed.parse_success else None,
             })

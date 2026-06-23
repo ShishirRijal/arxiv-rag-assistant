@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # ── Ollama ──────────────────────────────────────────────────────────────
     ollama_host:  str = Field(default="localhost")
     ollama_port:  int = Field(default=11434)
-    ollama_model: str = Field(default="llama3.2:3b")
+    ollama_model: str = Field(default="llama3.2:1b")
 
     # ── Jina AI Embeddings ────────────────────────────────────────────────
     # Get a free key (no signup): https://jina.ai/embeddings/

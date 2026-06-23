@@ -19,13 +19,11 @@ Usage:
 """
 
 import logging
-import time
-from datetime import date, timedelta
-from typing import Generator
+from datetime import date
 
 import arxiv
 
-from schemas import ArxivPaper
+from ..schemas import ArxivPaper
 
 logger = logging.getLogger(__name__)
 
