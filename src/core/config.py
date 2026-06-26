@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     # When absent: hybrid search silently falls back to BM25.
     jina_api_key: str = Field(default="")
 
+    # ── Redis Response Cache ──────────────────────────────────────────────
+    redis_host:      str  = Field(default="localhost")
+    redis_port:      int  = Field(default=6379)
+    redis_db:        int  = Field(default=0)
+    redis_ttl_hours: int  = Field(default=24)
+    redis_enabled:   bool = Field(default=True)
+
+    # ── Langfuse Observability ────────────────────────────────────────────
+    langfuse_public_key: str = Field(default="")
+    langfuse_secret_key: str = Field(default="")
+    langfuse_host:       str = Field(default="")
+    langfuse_base_url:   str = Field(default="")
+    langfuse_enabled:    bool = Field(default=True)
+
     # ── API ─────────────────────────────────────────────────────────────────
     api_host: str  = Field(default="0.0.0.0")
     api_port: int  = Field(default=8000)
@@ -55,6 +69,14 @@ class Settings(BaseSettings):
     @property
     def ollama_url(self) -> str:
         return f"http://{self.ollama_host}:{self.ollama_port}"
+
+    @property
+    def redis_url(self) -> str:
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def effective_langfuse_host(self) -> str:
+        return self.langfuse_host or self.langfuse_base_url
 
     class Config:
         env_file         = ".env"

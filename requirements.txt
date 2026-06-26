@@ -8,3 +8,5 @@ gradio
 arxiv
 httpx
 docling
+redis
+langfuse
