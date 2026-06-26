@@ -79,6 +79,8 @@ class AskResponse(BaseModel):
     search_mode: str
     n_chunks:    int
     took_ms:     int
+    cached:      bool = False
+    cache_key:   Optional[str] = None
 
 
 # ── Dependency ────────────────────────────────────────────────────────────────
@@ -123,8 +125,8 @@ async def ask(
         )
 
         logger.info(
-            "Ask complete: chunks=%d mode=%s took=%dms",
-            result.n_chunks, result.search_mode, result.took_ms,
+            "Ask complete: chunks=%d mode=%s cached=%s took=%dms",
+            result.n_chunks, result.search_mode, result.cached, result.took_ms,
         )
 
         return AskResponse(
@@ -134,6 +136,8 @@ async def ask(
             search_mode = result.search_mode,
             n_chunks    = result.n_chunks,
             took_ms     = result.took_ms,
+            cached      = result.cached,
+            cache_key   = result.cache_key,
         )
 
     except RuntimeError as exc:
