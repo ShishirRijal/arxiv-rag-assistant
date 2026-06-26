@@ -119,6 +119,20 @@ async def health_check():
     except Exception as exc:
         ollama = {"status": "unhealthy", "error": str(exc)}
 
+    # Redis cache is non-critical: failures should make requests slower, not down.
+    try:
+        from ..services.cache.factory import make_cache_service
+        cache = make_cache_service().check_health()
+    except Exception as exc:
+        cache = {"status": "unhealthy", "error": str(exc)}
+
+    # Langfuse is non-critical: missing keys or network errors should not block RAG.
+    try:
+        from ..services.observability.factory import make_langfuse_service
+        observability = make_langfuse_service().check_health()
+    except Exception as exc:
+        observability = {"status": "unhealthy", "error": str(exc)}
+
     embedding = {
         "status":  "enabled" if settings.jina_api_key else "disabled",
         "reason":  None if settings.jina_api_key else "JINA_API_KEY not set",
@@ -137,6 +151,8 @@ async def health_check():
             "postgresql": postgres,
             "opensearch": opensearch_,
             "ollama":     ollama,
+            "redis":      cache,
+            "langfuse":   observability,
             "embeddings": embedding,
         },
     }

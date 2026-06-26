@@ -38,6 +38,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Generator, Optional
 
+from ..cache.key_builder import build_ask_cache_key
+from ..cache.redis_service import RedisCacheService
+from ..observability.langfuse_service import LangfuseService
 from ..ollama.service import OllamaService
 from ..opensearch.hybrid_service import HybridSearchService
 from .context_builder import ContextBuilder, ContextSource
@@ -69,6 +72,8 @@ class RAGResponse:
     search_mode: str           # 'hybrid' | 'bm25'
     n_chunks:    int
     took_ms:     int
+    cached:      bool = False
+    cache_key:   Optional[str] = None
 
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
@@ -85,10 +90,16 @@ class RAGPipeline:
         search_svc:   HybridSearchService,
         ollama_svc:   OllamaService,
         context:      ContextBuilder,
+        cache_svc:    Optional[RedisCacheService] = None,
+        tracing_svc:  Optional[LangfuseService] = None,
+        model_name:   str = "",
     ):
         self._search  = search_svc
         self._ollama  = ollama_svc
         self._context = context
+        self._cache   = cache_svc
+        self._tracing = tracing_svc
+        self._model   = model_name
 
     # ── Standard (non-streaming) ──────────────────────────────────────────────
 
@@ -110,53 +121,134 @@ class RAGPipeline:
         4. Return answer + sources in a structured response
         """
         t0 = time.perf_counter()
-
-        # 1. Retrieve
-        search_result = self._search.search(
-            query      = question,
-            use_hybrid = use_hybrid,
-            categories = categories,
-            date_from  = date_from,
-            date_to    = date_to,
-            page_size  = self._context._max_chunks,
+        cache_key = build_ask_cache_key(
+            question=question,
+            use_hybrid=use_hybrid,
+            categories=categories,
+            date_from=date_from,
+            date_to=date_to,
+            model=self._model,
+            max_chunks=self._context._max_chunks,
         )
 
-        hits = self._hits_to_dicts(search_result.hits)
-        if not self._has_sufficient_evidence(question, hits):
+        with self._trace(
+            name="rag.ask",
+            input={
+                "question": question,
+                "use_hybrid": use_hybrid,
+                "categories": categories,
+                "date_from": date_from.isoformat() if date_from else None,
+                "date_to": date_to.isoformat() if date_to else None,
+                "cache_key": cache_key,
+            },
+        ) as trace:
+            cached = None
+            with self._trace(name="cache.lookup", input={"cache_key": cache_key}) as span:
+                if self._cache:
+                    cached = self._cache.get_json(cache_key)
+                span.update(output={"hit": cached is not None})
+
+            if cached is not None:
+                took_ms = int((time.perf_counter() - t0) * 1000)
+                response = self._response_from_cache(cached, took_ms=took_ms, cache_key=cache_key)
+                logger.info("RAG ask cache hit: query=%r took=%dms", question, took_ms)
+                trace.update(output={
+                    "cached": True,
+                    "took_ms": response.took_ms,
+                    "sources": response.sources,
+                    "n_chunks": response.n_chunks,
+                })
+                self._flush_trace()
+                return response
+
+            # 1. Retrieve
+            with self._trace(name="retrieval.hybrid_search", input={"query": question}) as span:
+                search_result = self._search.search(
+                    query      = question,
+                    use_hybrid = use_hybrid,
+                    categories = categories,
+                    date_from  = date_from,
+                    date_to    = date_to,
+                    page_size  = self._context._max_chunks,
+                )
+                span.update(output={
+                    "search_mode": search_result.search_mode,
+                    "total": search_result.total,
+                    "hits": len(search_result.hits),
+                    "took_ms": search_result.took_ms,
+                })
+
+            hits = self._hits_to_dicts(search_result.hits)
+            if not self._has_sufficient_evidence(question, hits):
+                took_ms = int((time.perf_counter() - t0) * 1000)
+                logger.info(
+                    "RAG ask refused: query=%r mode=%s chunks=%d took=%dms",
+                    question, search_result.search_mode, len(hits), took_ms,
+                )
+                response = RAGResponse(
+                    question=question,
+                    answer=_REFUSAL_ANSWER,
+                    sources=[],
+                    search_mode=search_result.search_mode,
+                    n_chunks=0,
+                    took_ms=took_ms,
+                    cached=False,
+                    cache_key=cache_key,
+                )
+                self._store_cache(cache_key, response)
+                trace.update(output={
+                    "cached": False,
+                    "refused": True,
+                    "took_ms": response.took_ms,
+                })
+                self._flush_trace()
+                return response
+
+            # 2. Build prompt
+            with self._trace(name="context.build") as span:
+                prompt, sources = self._context.build(question, hits)
+                span.update(output={
+                    "prompt_chars": len(prompt),
+                    "sources": [self._source_to_dict(s) for s in sources],
+                    "chunks": len(hits),
+                })
+
+            # 3. Generate
+            with self._trace(
+                name="ollama.generate",
+                as_type="generation",
+                input={"prompt_chars": len(prompt)},
+                model=self._model,
+            ) as span:
+                answer = self._ollama.generate(prompt)
+                span.update(output=answer)
+
             took_ms = int((time.perf_counter() - t0) * 1000)
             logger.info(
-                "RAG ask refused: query=%r mode=%s chunks=%d took=%dms",
+                "RAG ask: query=%r mode=%s chunks=%d took=%dms",
                 question, search_result.search_mode, len(hits), took_ms,
             )
-            return RAGResponse(
-                question=question,
-                answer=_REFUSAL_ANSWER,
-                sources=[],
-                search_mode=search_result.search_mode,
-                n_chunks=0,
-                took_ms=took_ms,
+
+            response = RAGResponse(
+                question    = question,
+                answer      = answer,
+                sources     = [self._source_to_dict(s) for s in sources],
+                search_mode = search_result.search_mode,
+                n_chunks    = len(hits),
+                took_ms     = took_ms,
+                cached      = False,
+                cache_key   = cache_key,
             )
 
-        # 2. Build prompt
-        prompt, sources = self._context.build(question, hits)
-
-        # 3. Generate
-        answer = self._ollama.generate(prompt)
-
-        took_ms = int((time.perf_counter() - t0) * 1000)
-        logger.info(
-            "RAG ask: query=%r mode=%s chunks=%d took=%dms",
-            question, search_result.search_mode, len(hits), took_ms,
-        )
-
-        return RAGResponse(
-            question    = question,
-            answer      = answer,
-            sources     = [self._source_to_dict(s) for s in sources],
-            search_mode = search_result.search_mode,
-            n_chunks    = len(hits),
-            took_ms     = took_ms,
-        )
+            self._store_cache(cache_key, response)
+            trace.update(output={
+                "cached": False,
+                "took_ms": response.took_ms,
+                "sources": response.sources,
+                "n_chunks": response.n_chunks,
+            })
+            self._flush_trace()
+            return response
 
     # ── Streaming ─────────────────────────────────────────────────────────────
 
@@ -181,32 +273,52 @@ class RAGPipeline:
           data: {"type": "sources", "content": [...]}
           data: [DONE]
         """
-        # Retrieve + build prompt (fast — happens before first token is yielded)
-        search_result = self._search.search(
-            query      = question,
-            use_hybrid = use_hybrid,
-            categories = categories,
-            date_from  = date_from,
-            date_to    = date_to,
-            page_size  = self._context._max_chunks,
-        )
+        with self._trace(name="rag.ask_stream", input={"question": question, "use_hybrid": use_hybrid}):
+            # Retrieve + build prompt (fast — happens before first token is yielded)
+            with self._trace(name="retrieval.hybrid_search", input={"query": question}) as span:
+                search_result = self._search.search(
+                    query      = question,
+                    use_hybrid = use_hybrid,
+                    categories = categories,
+                    date_from  = date_from,
+                    date_to    = date_to,
+                    page_size  = self._context._max_chunks,
+                )
+                span.update(output={
+                    "search_mode": search_result.search_mode,
+                    "total": search_result.total,
+                    "hits": len(search_result.hits),
+                    "took_ms": search_result.took_ms,
+                })
 
-        hits            = self._hits_to_dicts(search_result.hits)
-        if not self._has_sufficient_evidence(question, hits):
-            yield ("token", _REFUSAL_ANSWER)
-            yield ("sources", [])
+            hits = self._hits_to_dicts(search_result.hits)
+            if not self._has_sufficient_evidence(question, hits):
+                yield ("token", _REFUSAL_ANSWER)
+                yield ("sources", [])
+                yield ("done", None)
+                self._flush_trace()
+                return
+
+            with self._trace(name="context.build") as span:
+                prompt, sources = self._context.build(question, hits)
+                span.update(output={"prompt_chars": len(prompt), "chunks": len(hits)})
+
+            generated_parts: list[str] = []
+            with self._trace(
+                name="ollama.stream",
+                as_type="generation",
+                input={"prompt_chars": len(prompt)},
+                model=self._model,
+            ) as span:
+                for token in self._ollama.stream(prompt):
+                    generated_parts.append(token)
+                    yield ("token", token)
+                span.update(output="".join(generated_parts))
+
+            # Emit sources after all tokens
+            yield ("sources", [self._source_to_dict(s) for s in sources])
             yield ("done", None)
-            return
-
-        prompt, sources = self._context.build(question, hits)
-
-        # Stream tokens from Ollama
-        for token in self._ollama.stream(prompt):
-            yield ("token", token)
-
-        # Emit sources after all tokens
-        yield ("sources", [self._source_to_dict(s) for s in sources])
-        yield ("done", None)
+            self._flush_trace()
 
     # ── Private helpers ───────────────────────────────────────────────────────
 
@@ -282,3 +394,50 @@ class RAGPipeline:
             "title":    s.title,
             "url":      s.url,
         }
+
+    def _trace(self, **kwargs):
+        if self._tracing:
+            return self._tracing.observation(**kwargs)
+        from contextlib import nullcontext
+
+        class _Noop:
+            def update(self, **kwargs) -> None:
+                return None
+
+        return nullcontext(_Noop())
+
+    def _flush_trace(self) -> None:
+        if self._tracing:
+            self._tracing.flush()
+
+    def _store_cache(self, cache_key: str, response: RAGResponse) -> bool:
+        if not self._cache:
+            return False
+        with self._trace(name="cache.store", input={"cache_key": cache_key}) as span:
+            stored = self._cache.set_json(cache_key, self._response_to_cache(response))
+            span.update(output={"stored": stored, "ttl_seconds": self._cache.ttl_seconds})
+            return stored
+
+    @staticmethod
+    def _response_to_cache(response: RAGResponse) -> dict:
+        return {
+            "question": response.question,
+            "answer": response.answer,
+            "sources": response.sources,
+            "search_mode": response.search_mode,
+            "n_chunks": response.n_chunks,
+            "took_ms": response.took_ms,
+        }
+
+    @staticmethod
+    def _response_from_cache(payload: dict, *, took_ms: int, cache_key: str) -> RAGResponse:
+        return RAGResponse(
+            question=payload.get("question", ""),
+            answer=payload.get("answer", ""),
+            sources=payload.get("sources", []),
+            search_mode=payload.get("search_mode", "cache"),
+            n_chunks=int(payload.get("n_chunks", 0)),
+            took_ms=took_ms,
+            cached=True,
+            cache_key=cache_key,
+        )
