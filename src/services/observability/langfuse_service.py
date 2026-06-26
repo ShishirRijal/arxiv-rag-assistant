@@ -83,20 +83,31 @@ class LangfuseService:
             kwargs["model"] = model
 
         try:
-            with self._client.start_as_current_observation(**kwargs) as obs:
-                update: dict[str, Any] = {}
-                if input is not None:
-                    update["input"] = input
-                if metadata is not None:
-                    update["metadata"] = metadata
-                if update:
-                    obs.update(**update)
-                yield obs
-                if output is not None:
-                    obs.update(output=output)
+            observation_context = self._client.start_as_current_observation(**kwargs)
         except Exception as exc:
-            logger.warning("Langfuse observation failed for %s: %s", name, exc)
+            logger.warning("Langfuse observation start failed for %s: %s", name, exc)
             yield _NoopObservation()
+            return
+
+        with observation_context as obs:
+            update: dict[str, Any] = {}
+            if input is not None:
+                update["input"] = input
+            if metadata is not None:
+                update["metadata"] = metadata
+            if update:
+                try:
+                    obs.update(**update)
+                except Exception as exc:
+                    logger.warning("Langfuse observation update failed for %s: %s", name, exc)
+
+            yield obs
+
+            if output is not None:
+                try:
+                    obs.update(output=output)
+                except Exception as exc:
+                    logger.warning("Langfuse observation output update failed for %s: %s", name, exc)
 
     def flush(self) -> None:
         if not self.is_enabled:
