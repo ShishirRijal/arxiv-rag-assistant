@@ -57,6 +57,23 @@ services:
     networks:
       - rag-network
 
+  # ── Redis Cache ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag-network
+
   # ── Airflow ──────────────────────────────────────────────────────────────────
   airflow:
     image: apache/airflow:2.9.1-python3.11
@@ -102,10 +119,13 @@ services:
         condition: service_healthy
       opensearch:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       POSTGRES_HOST: postgres
       OPENSEARCH_HOST: opensearch
       OLLAMA_HOST: ollama
+      REDIS_HOST: redis
     env_file:
       - .env
     ports:
@@ -124,6 +144,7 @@ volumes:
   postgres_data:
   opensearch_data:
   ollama_models:
+  redis_data:
   airflow_plugins:
 
 networks:
