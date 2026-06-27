@@ -25,6 +25,7 @@ class AgenticRAGState(TypedDict, total=False):
     document_grades: list[DocumentGrade]
 
     retrieved_hits: list[dict[str, Any]]
+    search_mode: str
     sources: list[SourceItem]
     reasoning_steps: list[ReasoningStep]
     metadata: dict[str, Any]
@@ -44,6 +45,7 @@ def initial_state(question: str, *, metadata: Optional[dict[str, Any]] = None) -
         "routing_decision": None,
         "document_grades": [],
         "retrieved_hits": [],
+        "search_mode": "hybrid",
         "sources": [],
         "reasoning_steps": [],
         "metadata": metadata or {},
