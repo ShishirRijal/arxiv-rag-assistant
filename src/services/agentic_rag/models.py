@@ -22,6 +22,13 @@ class DocumentGrade(BaseModel):
     reason: str = ""
 
 
+class QueryRewriteResult(BaseModel):
+    """Structured result from query rewriting."""
+
+    rewritten_query: str = Field(min_length=1)
+    reason: str = ""
+
+
 class SourceItem(BaseModel):
     """Source metadata exposed by the agentic response."""
 

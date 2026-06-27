@@ -28,3 +28,39 @@ Respond with JSON only:
   "reason": "short explanation"
 }}
 """
+
+GRADE_DOCUMENTS_PROMPT = """You are grading whether retrieved arXiv paper chunks are useful for answering a user question.
+
+User question:
+{question}
+
+Retrieved context:
+{context}
+
+Decide whether the context contains enough relevant evidence to answer the question.
+
+Respond with JSON only:
+{{
+  "is_relevant": true,
+  "score": 0.0,
+  "reason": "short explanation"
+}}
+"""
+
+REWRITE_QUERY_PROMPT = """You rewrite user questions into better search queries for arXiv paper retrieval.
+
+Original user question:
+{question}
+
+Current failed or weak search query:
+{current_query}
+
+Rewrite the query to improve retrieval from CS/AI/ML research papers.
+Keep the user's intent. Add useful technical terms only when appropriate.
+
+Respond with JSON only:
+{{
+  "rewritten_query": "improved search query",
+  "reason": "short explanation"
+}}
+"""
