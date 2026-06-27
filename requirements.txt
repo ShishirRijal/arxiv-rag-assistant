@@ -10,3 +10,4 @@ httpx
 docling
 redis
 langfuse
+langgraph
