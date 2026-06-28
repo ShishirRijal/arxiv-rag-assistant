@@ -21,7 +21,7 @@ Design decisions:
   - num_predict cap (512): prevents runaway generation.
 
 Usage:
-    from arxiv_rag_curator.services.ollama.service import OllamaService
+    from src.services.ollama.service import OllamaService
     svc = OllamaService(url="http://localhost:11434", model="llama3.2:1b")
     answer = svc.generate(prompt)
     for token in svc.stream(prompt):

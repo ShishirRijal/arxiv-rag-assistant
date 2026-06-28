@@ -14,15 +14,16 @@ Design:
   - Idempotent: re-running with the same query updates rather than duplicates
 
 Usage:
-    from arxiv_rag_curator.services.metadata_fetcher import MetadataFetcher
-    from arxiv_rag_curator.services.arxiv.factory import make_arxiv_client
-    from arxiv_rag_curator.services.pdf_parser.factory import make_pdf_downloader, make_pdf_parser
-    from arxiv_rag_curator.core.database import get_db
+    from src.core.database import get_db
+    from src.services.arxiv.client import ArxivClient
+    from src.services.metadata_fetcher import MetadataFetcher
+    from src.services.pdf_parser.downloader import PDFDownloader
+    from src.services.pdf_parser.parser import DoclingParser
 
     fetcher = MetadataFetcher(
-        arxiv_client=make_arxiv_client(),
-        pdf_downloader=make_pdf_downloader(),
-        pdf_parser=make_pdf_parser(),
+        arxiv_client=ArxivClient(),
+        pdf_downloader=PDFDownloader(),
+        pdf_parser=DoclingParser(),
         db=get_db,
     )
     result = fetcher.fetch_for_date(category="cs.AI", target_date=date.today())

@@ -2,7 +2,7 @@
 Factory for the Ollama service.
 
 Usage:
-    from arxiv_rag_curator.services.ollama.factory import make_ollama_service
+    from src.services.ollama.factory import make_ollama_service
     svc = make_ollama_service()
 """
 

@@ -6,7 +6,7 @@ JinaEmbeddingService with is_available=False — callers check this
 before attempting to embed, falling back to BM25-only search.
 
 Usage:
-    from arxiv_rag_curator.services.embeddings.factory import make_embeddings_service
+    from src.services.embeddings.factory import make_embeddings_service
     svc = make_embeddings_service()
     if svc.is_available:
         vec = svc.embed_query("attention mechanism")

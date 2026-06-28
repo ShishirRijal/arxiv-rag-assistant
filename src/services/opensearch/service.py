@@ -14,7 +14,7 @@ What this is NOT responsible for:
   - HTTP routing (that's the FastAPI router)
 
 Usage:
-    from arxiv_rag_curator.services.opensearch.factory import make_search_service
+    from src.services.opensearch.factory import make_search_service
     svc = make_search_service()
     results = svc.search("transformer attention", categories=["cs.AI"])
 """

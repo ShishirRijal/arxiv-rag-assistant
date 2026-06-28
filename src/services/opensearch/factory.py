@@ -5,7 +5,7 @@ Mirrors the pattern from services/factory.py — a single place to wire
 dependencies and configure each service for the current environment.
 
 Usage:
-    from arxiv_rag_curator.services.opensearch.factory import (
+    from src.services.opensearch.factory import (
         make_search_service,
         make_paper_indexer,
     )

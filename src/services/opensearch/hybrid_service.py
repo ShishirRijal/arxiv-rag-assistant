@@ -17,7 +17,7 @@ Search flow:
   5. On any embedding failure: run BM25-only search instead
 
 Usage:
-    from arxiv_rag_curator.services.opensearch.hybrid_service import HybridSearchService
+    from src.services.opensearch.hybrid_service import HybridSearchService
     svc = HybridSearchService(os_client, embeddings_svc)
     result = svc.search("retrieval augmented generation", use_hybrid=True)
     print(result.search_mode)  # 'hybrid' or 'bm25'

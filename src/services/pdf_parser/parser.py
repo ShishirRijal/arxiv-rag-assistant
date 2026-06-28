@@ -14,7 +14,7 @@ Why Docling over PyPDF2/pdfplumber?
   - Future: OCR and VLM support for figures/charts
 
 Usage:
-    from arxiv_rag_curator.services.pdf_parser.parser import DoclingParser, MockParser
+    from src.services.pdf_parser.parser import DoclingParser, MockParser
     parser = DoclingParser()
     result = parser.parse(Path("paper.pdf"), "2301.00001")
     if result.parse_success:
@@ -95,11 +95,11 @@ class MockParser(PDFParser):
         )
 
 
-# ── Docling implementation (for production) ───────────────────────────────────
+# ── Docling implementation ────────────────────────────────────────────────────
 
 class DoclingParser(PDFParser):
     """
-    Production PDF parser backed by Docling.
+    PDF parser backed by Docling.
 
     Docling is a scientific document understanding library developed by IBM.
     It understands academic paper structure: multi-column layouts, mathematical

@@ -13,10 +13,10 @@ Also responsible for:
   - Deleting old chunks for a paper before re-indexing (clean update)
 
 Usage:
-    from arxiv_rag_curator.services.opensearch.chunk_indexer import ChunkIndexer
-    from arxiv_rag_curator.services.opensearch.factory import make_opensearch_client
-    from arxiv_rag_curator.services.embeddings.factory import make_embeddings_service
-    from arxiv_rag_curator.core.database import get_db
+    from src.core.database import get_db
+    from src.services.embeddings.factory import make_embeddings_service
+    from src.services.opensearch.chunk_indexer import ChunkIndexer
+    from src.services.opensearch.factory import make_opensearch_client
 
     indexer = ChunkIndexer(
         os_client=make_opensearch_client(),

@@ -5,7 +5,7 @@ Wires together HybridSearchService + OllamaService + ContextBuilder
 into a ready-to-use RAGPipeline.
 
 Usage:
-    from arxiv_rag_curator.services.rag.factory import make_rag_pipeline
+    from src.services.rag.factory import make_rag_pipeline
     pipeline = make_rag_pipeline()
     result   = pipeline.ask("What is RLHF?")
 """

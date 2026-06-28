@@ -15,7 +15,7 @@ Key design decisions:
 
 
 Usage:
-    from arxiv_rag_curator.services.embeddings.jina import JinaEmbeddingService
+    from src.services.embeddings.jina import JinaEmbeddingService
     svc = JinaEmbeddingService(api_key="jina_...")
     embeddings = svc.embed_passages(["chunk text one", "chunk text two"])
     query_vec  = svc.embed_query("transformer attention")

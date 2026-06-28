@@ -1,5 +1,5 @@
 """
-arXiv API client with production-grade rate limiting.
+arXiv API client with explicit rate limiting.
 
 arXiv's rules are non-negotiable:
   - Minimum 3 seconds between requests
@@ -13,7 +13,7 @@ We wrap the 'arxiv' Python library with:
   - Structured output via ArxivPaper schema
 
 Usage:
-    from arxiv_rag_curator.services.arxiv.client import ArxivClient
+    from src.services.arxiv.client import ArxivClient
     client = ArxivClient()
     papers = client.fetch_by_date(category="cs.AI", target_date=date.today())
 """

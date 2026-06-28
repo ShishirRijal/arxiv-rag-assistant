@@ -16,7 +16,7 @@ answer rather than a 500 error. If the LLM fails, it raises so the API can
 return a proper 503.
 
 Usage:
-    from arxiv_rag_curator.services.rag.factory import make_rag_pipeline
+    from src.services.rag.factory import make_rag_pipeline
     pipeline = make_rag_pipeline()
 
     # Complete response

@@ -87,10 +87,16 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-dev-secret-key}
+      PYTHONPATH: /opt/airflow
+      POSTGRES_HOST: postgres
+      OPENSEARCH_HOST: opensearch
+      OLLAMA_HOST: ollama
+      REDIS_HOST: redis
     ports:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
       - ./airflow/logs:/opt/airflow/logs
       - airflow_plugins:/opt/airflow/plugins
     command: >

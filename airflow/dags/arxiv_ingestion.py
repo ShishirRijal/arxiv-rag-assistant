@@ -22,7 +22,6 @@ Schedule: unchanged — 6 AM UTC, weekdays only.
 
 import logging
 from datetime import datetime, timedelta
-from datetime import date as date_type
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
@@ -43,6 +42,22 @@ CATEGORIES      = ["cs.AI", "cs.LG", "cs.CL"]
 MAX_PER_CATEGORY = 50
 
 
+def _make_fetcher():
+    """Create the ingestion orchestrator inside the Airflow worker process."""
+    from src.core.database import get_db
+    from src.services.arxiv.client import ArxivClient
+    from src.services.metadata_fetcher import MetadataFetcher
+    from src.services.pdf_parser.downloader import PDFDownloader
+    from src.services.pdf_parser.parser import DoclingParser
+
+    return MetadataFetcher(
+        arxiv_client=ArxivClient(),
+        pdf_downloader=PDFDownloader(),
+        pdf_parser=DoclingParser(),
+        db=get_db,
+    )
+
+
 # ── Task 1: verify services ───────────────────────────────────────────────────
 
 def verify_services(**context) -> dict:
@@ -50,7 +65,7 @@ def verify_services(**context) -> dict:
     import psycopg2
     import requests
 
-    from ...src.core.config import settings
+    from src.core.config import settings
 
     issues = []
 
@@ -89,13 +104,11 @@ def verify_services(**context) -> dict:
 
 def fetch_daily_papers(**context) -> dict:
     """Fetch yesterday's papers for all configured categories."""
-    from arxiv_rag_curator.services.factory import make_fetcher
-
     execution_date = context["execution_date"]
     target_date    = execution_date.date() - timedelta(days=1)
     logger.info("Fetching papers for date: %s", target_date)
 
-    fetcher = make_fetcher()
+    fetcher = _make_fetcher()
     totals  = {"total": 0, "saved": 0, "parsed": 0, "failed": 0, "errors": []}
 
     for category in CATEGORIES:
@@ -118,9 +131,7 @@ def fetch_daily_papers(**context) -> dict:
 
 def retry_failed_pdfs(**context) -> dict:
     """Re-attempt PDF parsing for papers where pdf_parsed = FALSE."""
-    from arxiv_rag_curator.services.factory import make_fetcher
-
-    fetcher = make_fetcher()
+    fetcher = _make_fetcher()
     result  = fetcher.retry_failed_pdfs(limit=20)
     return {"recovered": result.parsed, "still_failing": result.failed}
 
@@ -141,7 +152,7 @@ def sync_to_opensearch(**context) -> dict:
     - The sync scans latest papers first (ORDER BY created_at DESC)
       so today's new papers are indexed first
     """
-    from arxiv_rag_curator.services.opensearch.factory import make_paper_indexer
+    from src.services.opensearch.factory import make_paper_indexer
 
     indexer = make_paper_indexer()
     result  = indexer.sync_all(batch_size=200)

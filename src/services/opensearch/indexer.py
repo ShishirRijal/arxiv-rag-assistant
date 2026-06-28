@@ -15,9 +15,9 @@ OpenSearch documents. It does NOT decide what to search for — that's
 QueryBuilder's job.
 
 Usage:
-    from arxiv_rag_curator.services.opensearch.indexer import PaperIndexer
-    from arxiv_rag_curator.services.opensearch.factory import make_search_service
-    from arxiv_rag_curator.core.database import get_db
+    from src.core.database import get_db
+    from src.services.opensearch.factory import make_search_service
+    from src.services.opensearch.indexer import PaperIndexer
 
     indexer = PaperIndexer(search_service=make_search_service(), db=get_db)
     result = indexer.sync_all(batch_size=200)

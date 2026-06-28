@@ -14,7 +14,7 @@ The cache persists across pipeline runs, so crashed runs restart fast.
 You can clear it manually:  rm -rf /tmp/arxiv_pdf_cache/
 
 Usage:
-    from arxiv_rag_curator.services.pdf_parser.downloader import PDFDownloader
+    from src.services.pdf_parser.downloader import PDFDownloader
     downloader = PDFDownloader()
     path = downloader.download("2301.00001", "https://arxiv.org/pdf/2301.00001")
 """
@@ -77,7 +77,7 @@ class PDFDownloader:
         with httpx.Client(
             timeout=self._timeout,
             follow_redirects=True,
-            headers={"User-Agent": "arxiv-rag-curator/0.1 (academic research tool)"},
+            headers={"User-Agent": "arxiv-rag-assistant/0.1 (academic research tool)"},
         ) as client:
             with client.stream("GET", pdf_url) as response:
                 response.raise_for_status()
