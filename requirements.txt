@@ -11,3 +11,4 @@ docling
 redis
 langfuse
 langgraph
+python-telegram-bot
