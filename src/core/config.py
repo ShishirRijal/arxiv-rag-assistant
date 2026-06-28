@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     agentic_top_k:                  int   = Field(default=5)
     agentic_temperature:            float = Field(default=0.0)
 
+    # ── Telegram Bot ───────────────────────────────────────────────────────
+    telegram_bot_token:        str = Field(default="")
+    telegram_allowed_user_ids: str = Field(default="")
+    telegram_api_base_url:     str = Field(default="http://localhost:8000")
+    telegram_request_timeout:  int = Field(default=60)
+    telegram_use_agentic_rag:  bool = Field(default=True)
+
     # ── API ─────────────────────────────────────────────────────────────────
     api_host: str  = Field(default="0.0.0.0")
     api_port: int  = Field(default=8000)
@@ -83,6 +90,16 @@ class Settings(BaseSettings):
     @property
     def effective_langfuse_host(self) -> str:
         return self.langfuse_host or self.langfuse_base_url
+
+    @property
+    def parsed_telegram_allowed_user_ids(self) -> set[int]:
+        if not self.telegram_allowed_user_ids.strip():
+            return set()
+        return {
+            int(user_id.strip())
+            for user_id in self.telegram_allowed_user_ids.split(",")
+            if user_id.strip()
+        }
 
     class Config:
         env_file         = ".env"
