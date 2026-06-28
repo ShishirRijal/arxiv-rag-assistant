@@ -157,7 +157,7 @@ def predict_streaming(
 # ── Gradio UI ─────────────────────────────────────────────────────────────────
 
 DESCRIPTION = """
-## arXiv RAG Curator 📚
+## arXiv RAG Assistant
 
 Ask questions about AI research papers. The system searches your ingested arXiv corpus using
 hybrid BM25 + semantic search, then generates a grounded answer using a local LLM (Ollama).
@@ -169,7 +169,7 @@ hybrid BM25 + semantic search, then generates a grounded answer using a local LL
 """
 
 with gr.Blocks(
-    title="arXiv RAG Curator",
+    title="arXiv RAG Assistant",
     theme=gr.themes.Soft(),
 ) as demo:
     gr.Markdown(DESCRIPTION)

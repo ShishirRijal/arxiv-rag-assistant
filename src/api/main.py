@@ -1,5 +1,5 @@
 """
-arXiv RAG Curator — FastAPI entry point.
+arXiv RAG Assistant — FastAPI entry point.
 
 Updated to:
   - Register the ask router (/api/v1/ask and /api/v1/ask/stream)
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting arXiv RAG Curator API...")
+    logger.info("Starting arXiv RAG Assistant API...")
 
     # Database + BM25 search index
     init_connection_pool()
@@ -65,10 +65,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="arXiv RAG Curator API",
+    title="arXiv RAG Assistant API",
     description=(
-        "Production RAG system for arXiv papers. "
-        "Hybrid BM25 + semantic search, local LLM generation via Ollama, "
+        "RAG system for arXiv papers. "
+        "Hybrid BM25 + semantic search, local LLM generation with Ollama, "
         "streaming responses, and Gradio interface."
     ),
     version="0.4.0",
@@ -95,7 +95,7 @@ app.include_router(agentic_ask_router)  # /api/v1/ask-agentic
 @app.get("/")
 async def root():
     return {
-        "service":        "arXiv RAG Curator",
+        "service":        "arXiv RAG Assistant",
         "version":        "0.4.0",
         "docs":           "/docs",
         "endpoints": {

@@ -1,4 +1,4 @@
-# arXiv RAG Curator
+# arXiv RAG Assistant
 
 A local-first research assistant for collecting, indexing, searching, and asking questions over arXiv papers.
 
