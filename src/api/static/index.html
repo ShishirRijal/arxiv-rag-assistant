@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>arXiv RAG Assistant</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar" aria-label="Controls">
+        <div class="brand">
+          <div>
+            <h1>arXiv RAG Assistant</h1>
+          </div>
+        </div>
+
+        <section class="panel status-panel">
+          <div class="panel-header">
+            <span>System</span>
+            <button id="refresh-health" class="ghost-button" type="button">Refresh</button>
+          </div>
+          <div id="health-status" class="health-card muted">Checking services...</div>
+        </section>
+
+        <section class="panel">
+          <label class="control-label" for="rag-mode">Answer mode</label>
+          <select id="rag-mode">
+            <option value="agentic" selected>Agentic RAG</option>
+            <option value="standard">Standard RAG</option>
+          </select>
+
+          <label class="toggle-row" for="use-hybrid">
+            <span>
+              <strong>Hybrid search</strong>
+              <small>BM25 + semantic retrieval</small>
+            </span>
+            <input id="use-hybrid" type="checkbox" checked />
+          </label>
+
+          <label class="control-label" for="category-filter">Category filter</label>
+          <select id="category-filter">
+            <option value="">All categories</option>
+            <option value="cs.AI">cs.AI</option>
+            <option value="cs.LG">cs.LG</option>
+            <option value="cs.CL">cs.CL</option>
+            <option value="cs.CV">cs.CV</option>
+            <option value="cs.IR">cs.IR</option>
+            <option value="stat.ML">stat.ML</option>
+          </select>
+        </section>
+
+        <section class="panel examples">
+          <div class="panel-header">
+            <span>Try asking</span>
+          </div>
+          <button type="button" data-example="What is the transformer architecture?">What is the transformer architecture?</button>
+          <button type="button" data-example="How transparent is DiffusionGemma?">How transparent is DiffusionGemma?</button>
+          <button type="button" data-example="Compare attention and recurrence in sequence models.">Compare attention and recurrence.</button>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <header class="hero">
+          <p class="eyebrow">arxivChat</p>
+          <h2>Chat With Research Papers</h2>
+        </header>
+
+        <section id="messages" class="messages" aria-live="polite"></section>
+
+        <form id="ask-form" class="composer">
+          <textarea
+            id="question-input"
+            rows="2"
+            placeholder="Ask about a paper, method, architecture, or result..."
+            autocomplete="off"
+          ></textarea>
+          <div class="composer-actions">
+            <span id="request-hint">Agentic mode may take longer because it grades and rewrites retrieval.</span>
+            <button id="ask-button" type="submit">Ask</button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <template id="user-message-template">
+      <article class="message user-message">
+        <div class="bubble"></div>
+      </article>
+    </template>
+
+    <template id="assistant-message-template">
+      <article class="message assistant-message">
+        <div class="avatar">A</div>
+        <div class="bubble">
+          <div class="answer-text"></div>
+          <div class="meta-row"></div>
+          <div class="sources"></div>
+          <details class="reasoning">
+            <summary>Reasoning steps</summary>
+            <ol></ol>
+          </details>
+        </div>
+      </article>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
