@@ -2,7 +2,7 @@
 
 A local-first research assistant for collecting, indexing, searching, and asking questions over arXiv papers.
 
-The project combines arXiv ingestion, PDF parsing, keyword search, semantic search, hybrid retrieval, local LLM answering, response caching, tracing, a graph-based RAG workflow, a Gradio UI, and a Telegram bot interface.
+The project combines arXiv ingestion, PDF parsing, keyword search, semantic search, hybrid retrieval, local LLM answering, response caching, tracing, a graph-based RAG workflow, a browser chat UI, and a Telegram bot interface.
 
 ## What It Does
 
@@ -15,13 +15,13 @@ The project combines arXiv ingestion, PDF parsing, keyword search, semantic sear
 - Provides citations back to the source arXiv papers.
 - Caches repeated answers with Redis.
 - Sends traces and spans to Langfuse when configured.
-- Exposes the system through FastAPI, Gradio, and Telegram.
+- Exposes the system through FastAPI, a browser chat UI, and Telegram.
 
 ## Current Interfaces
 
 - FastAPI docs: `http://localhost:8000/docs`
 - Health check: `http://localhost:8000/health`
-- Gradio UI: `gradio_launcher.py`
+- Chat UI: `http://localhost:8000/chat`
 - Telegram bot: `python -m src.bot`
 - Airflow UI: `http://localhost:8080`
 - OpenSearch: `http://localhost:9200`
@@ -36,7 +36,7 @@ arXiv API
   -> OpenSearch paper + chunk indexes
   -> BM25 / semantic / hybrid retrieval
   -> RAG answer generation with Ollama
-  -> FastAPI / Gradio / Telegram
+  -> FastAPI / browser chat / Telegram
 ```
 
 Supporting services:
@@ -63,7 +63,6 @@ Airflow      scheduled ingestion DAG
 - Jina embeddings
 - LangGraph
 - Langfuse
-- Gradio
 - python-telegram-bot
 - Docker Compose
 
@@ -87,6 +86,7 @@ Airflow      scheduled ingestion DAG
 ├── src/
 │   ├── api/
 │   │   ├── main.py
+│   │   ├── static/
 │   │   └── routers/
 │   ├── bot/
 │   ├── core/
@@ -104,7 +104,6 @@ Airflow      scheduled ingestion DAG
 ├── tests/
 ├── docker-compose.yml
 ├── Dockerfile
-├── gradio_launcher.py
 └── requirements.txt
 ```
 
@@ -287,26 +286,23 @@ username: admin
 password: admin
 ```
 
-## Gradio UI
+## Browser Chat UI
 
-Start the API first, then run:
-
-```bash
-.venv/bin/python gradio_launcher.py
-```
-
-Open:
+Start the API and open:
 
 ```text
-http://localhost:7861
+http://localhost:8000/chat
 ```
 
-The Gradio UI supports:
+The chat UI supports:
 
-- streamed answers
-- source links
+- standard RAG and agentic RAG modes
+- source cards with arXiv links
+- retrieval metadata
+- agentic reasoning steps
+- service health status
 - category filtering
-- hybrid search toggle
+- hybrid search toggle for the standard endpoint
 
 ## Telegram Bot
 

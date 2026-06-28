@@ -9,9 +9,12 @@ Updated to:
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from ..core.config import settings
 from ..core.database import check_health as db_health
@@ -28,6 +31,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -69,7 +73,7 @@ app = FastAPI(
     description=(
         "RAG system for arXiv papers. "
         "Hybrid BM25 + semantic search, local LLM generation with Ollama, "
-        "streaming responses, and Gradio interface."
+        "streaming responses, and a browser chat interface."
     ),
     version="0.4.0",
     docs_url="/docs",
@@ -90,6 +94,7 @@ app.include_router(search_router)   # /api/v1/search
 app.include_router(hybrid_router)   # /api/v1/hybrid-search
 app.include_router(ask_router)      # /api/v1/ask  +  /api/v1/ask/stream
 app.include_router(agentic_ask_router)  # /api/v1/ask-agentic
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
@@ -98,6 +103,7 @@ async def root():
         "service":        "arXiv RAG Assistant",
         "version":        "0.4.0",
         "docs":           "/docs",
+        "chat":           "/chat",
         "endpoints": {
             "bm25_search":    "/api/v1/search",
             "hybrid_search":  "/api/v1/hybrid-search",
@@ -108,6 +114,11 @@ async def root():
         },
         "hybrid_enabled": bool(settings.jina_api_key),
     }
+
+
+@app.get("/chat", include_in_schema=False)
+async def chat_ui():
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
