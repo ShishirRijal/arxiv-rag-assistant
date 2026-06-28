@@ -34,7 +34,7 @@ def run_rewrite_query_node(
     )
 
     try:
-        raw = ollama.generate(prompt, temperature=0.2, num_predict=160)
+        raw = ollama.generate(prompt, temperature=0.2, num_predict=160, json_mode=True)
         result = parse_structured_json(raw, QueryRewriteResult)
         rewritten = result.rewritten_query.strip()
         reason = result.reason

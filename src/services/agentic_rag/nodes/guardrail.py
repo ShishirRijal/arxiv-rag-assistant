@@ -30,7 +30,7 @@ def run_guardrail_node(
     prompt = GUARDRAIL_PROMPT.format(question=question)
 
     try:
-        raw = ollama.generate(prompt, temperature=0.0, num_predict=160)
+        raw = ollama.generate(prompt, temperature=0.0, num_predict=160, json_mode=True)
         result = parse_structured_json(raw, GuardrailResult)
     except Exception as exc:
         logger.warning("Guardrail LLM call failed; using conservative fallback: %s", exc)

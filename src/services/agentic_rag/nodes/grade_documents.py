@@ -43,7 +43,7 @@ def run_grade_documents_node(
     prompt = GRADE_DOCUMENTS_PROMPT.format(question=question, context=context)
 
     try:
-        raw = ollama.generate(prompt, temperature=0.0, num_predict=180)
+        raw = ollama.generate(prompt, temperature=0.0, num_predict=180, json_mode=True)
         parsed = parse_structured_json(raw, DocumentGrade)
         grade = DocumentGrade(
             chunk_id="retrieved_context",

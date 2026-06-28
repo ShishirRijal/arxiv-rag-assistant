@@ -72,6 +72,7 @@ class OllamaService:
         prompt:      str,
         temperature: float = DEFAULT_TEMPERATURE,
         num_predict: int   = DEFAULT_NUM_PREDICT,
+        json_mode:   bool  = False,
     ) -> str:
         """
         Non-streaming generation — waits for the complete response.
@@ -81,7 +82,8 @@ class OllamaService:
         """
         payload = self._build_payload(prompt, stream=False,
                                        temperature=temperature,
-                                       num_predict=num_predict)
+                                       num_predict=num_predict,
+                                       json_mode=json_mode)
         try:
             resp = self._session.post(
                 f"{self._url}/api/generate",
@@ -114,7 +116,8 @@ class OllamaService:
         """
         payload = self._build_payload(prompt, stream=True,
                                        temperature=temperature,
-                                       num_predict=num_predict)
+                                       num_predict=num_predict,
+                                       json_mode=False)
         try:
             resp = self._session.post(
                 f"{self._url}/api/generate",
@@ -217,8 +220,9 @@ class OllamaService:
         stream:      bool,
         temperature: float,
         num_predict: int,
+        json_mode:   bool,
     ) -> dict:
-        return {
+        payload = {
             "model":  self._model,
             "prompt": prompt,
             "stream": stream,
@@ -229,3 +233,6 @@ class OllamaService:
                 "repeat_penalty": DEFAULT_REPEAT_PENALTY,
             },
         }
+        if json_mode:
+            payload["format"] = "json"
+        return payload
