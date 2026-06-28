@@ -56,7 +56,7 @@ pip-wheel-metadata/
 
 # Guides
 *_guide.md
-docs/
+docs/private/
 
 # Logs
 airflow/logs/
