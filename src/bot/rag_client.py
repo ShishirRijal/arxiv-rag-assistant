@@ -52,6 +52,24 @@ class RAGClient:
         except httpx.HTTPError as exc:
             raise RAGClientError(f"Could not reach RAG API: {exc}") from exc
 
+    async def health(self) -> dict[str, Any]:
+        """Return the FastAPI health response."""
+        try:
+            async with httpx.AsyncClient(
+                base_url=self._config.base_url.rstrip("/"),
+                timeout=min(self._config.timeout_seconds, 10),
+            ) as client:
+                response = await client.get("/health")
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as exc:
+            detail = self._extract_error_detail(exc.response)
+            raise RAGClientError(f"Health check returned {exc.response.status_code}: {detail}") from exc
+        except httpx.TimeoutException as exc:
+            raise RAGClientError("Health check timed out.") from exc
+        except httpx.HTTPError as exc:
+            raise RAGClientError(f"Could not reach RAG API health endpoint: {exc}") from exc
+
     @staticmethod
     def _extract_error_detail(response: httpx.Response) -> str:
         try:
