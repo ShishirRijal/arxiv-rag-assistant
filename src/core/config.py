@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     langfuse_base_url:   str = Field(default="")
     langfuse_enabled:    bool = Field(default=True)
 
+    # ── Agentic RAG ───────────────────────────────────────────────────────
+    agentic_guardrail_threshold:    int   = Field(default=60)
+    agentic_max_retrieval_attempts: int   = Field(default=2)
+    agentic_top_k:                  int   = Field(default=5)
+    agentic_temperature:            float = Field(default=0.0)
+
     # ── API ─────────────────────────────────────────────────────────────────
     api_host: str  = Field(default="0.0.0.0")
     api_port: int  = Field(default=8000)

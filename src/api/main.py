@@ -21,6 +21,7 @@ from ..core.search import init_index
 from .routers.search import router as search_router
 from .routers.hybrid_search import router as hybrid_router
 from .routers.ask import router as ask_router
+from .routers.agentic_ask import router as agentic_ask_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -88,6 +89,7 @@ app.add_middleware(
 app.include_router(search_router)   # /api/v1/search
 app.include_router(hybrid_router)   # /api/v1/hybrid-search
 app.include_router(ask_router)      # /api/v1/ask  +  /api/v1/ask/stream
+app.include_router(agentic_ask_router)  # /api/v1/ask-agentic
 
 
 @app.get("/")
@@ -101,6 +103,7 @@ async def root():
             "hybrid_search":  "/api/v1/hybrid-search",
             "ask":            "/api/v1/ask",
             "ask_stream":     "/api/v1/ask/stream",
+            "ask_agentic":     "/api/v1/ask-agentic",
             "health":         "/health",
         },
         "hybrid_enabled": bool(settings.jina_api_key),
