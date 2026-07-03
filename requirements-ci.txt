@@ -1,0 +1,6 @@
+pydantic-settings
+opensearch-py
+requests
+httpx
+langgraph
+python-telegram-bot

@@ -1,0 +1,107 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arxiv-rag-curator-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Test and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: arxiv-rag-curator:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to Azure VM
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Configure SSH
+        env:
+          AZURE_VM_HOST: ${{ secrets.AZURE_VM_HOST }}
+          AZURE_VM_SSH_KEY: ${{ secrets.AZURE_VM_SSH_KEY }}
+          AZURE_VM_SSH_PORT: ${{ secrets.AZURE_VM_SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+
+          test -n "$AZURE_VM_HOST"
+          test -n "$AZURE_VM_SSH_KEY"
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$AZURE_VM_SSH_KEY" > ~/.ssh/azure_vm_key
+          chmod 600 ~/.ssh/azure_vm_key
+          ssh-keyscan -p "$AZURE_VM_SSH_PORT" -H "$AZURE_VM_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy with Docker Compose
+        env:
+          AZURE_VM_HOST: ${{ secrets.AZURE_VM_HOST }}
+          AZURE_VM_USER: ${{ secrets.AZURE_VM_USER }}
+          AZURE_VM_APP_DIR: ${{ secrets.AZURE_VM_APP_DIR }}
+          AZURE_VM_SSH_PORT: ${{ secrets.AZURE_VM_SSH_PORT || '22' }}
+        run: |
+          set -euo pipefail
+
+          test -n "$AZURE_VM_HOST"
+          test -n "$AZURE_VM_USER"
+          test -n "$AZURE_VM_APP_DIR"
+
+          ssh -i ~/.ssh/azure_vm_key \
+            -p "$AZURE_VM_SSH_PORT" \
+            "$AZURE_VM_USER@$AZURE_VM_HOST" \
+            "APP_DIR='$AZURE_VM_APP_DIR' BRANCH='${{ github.ref_name }}' bash -s" <<'EOF'
+          set -euo pipefail
+
+          cd "$APP_DIR"
+          git config --global --add safe.directory "$APP_DIR"
+          git fetch --prune origin
+          git checkout "$BRANCH"
+          git pull --ff-only origin "$BRANCH"
+
+          docker compose up -d --build
+          docker compose ps
+          curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://localhost:8000/health
+          EOF
