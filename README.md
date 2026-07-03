@@ -1,84 +1,122 @@
 # arXiv RAG Assistant
 
-A local-first research assistant for collecting, indexing, searching, and asking questions over arXiv papers.
+**A local-first, production-style Retrieval-Augmented Generation system for searching and asking questions over arXiv papers** — hybrid search, an agentic reasoning workflow, response caching, full observability, and a Telegram bot, all running on a local Ollama model.
 
-The project combines arXiv ingestion, PDF parsing, keyword search, semantic search, hybrid retrieval, local LLM answering, response caching, tracing, a graph-based RAG workflow, a browser chat UI, and a Telegram bot interface.
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-agentic%20workflow-1C3C3C)
+![OpenSearch](https://img.shields.io/badge/OpenSearch-hybrid%20search-005EB8?logo=opensearch&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-cache-DC382D?logo=redis&logoColor=white)
+![Airflow](https://img.shields.io/badge/Airflow-daily%20ingestion-017CEE?logo=apacheairflow&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 
-## What It Does
+---
 
-- Fetches arXiv papers and metadata for selected research categories.
-- Downloads and parses PDFs into searchable text chunks.
-- Stores paper metadata in PostgreSQL.
-- Indexes papers and chunks in OpenSearch.
-- Supports BM25 keyword search, vector search, and hybrid search.
-- Generates grounded answers with a local Ollama model.
-- Provides citations back to the source arXiv papers.
-- Caches repeated answers with Redis.
-- Sends traces and spans to Langfuse when configured.
-- Exposes the system through FastAPI, a browser chat UI, and Telegram.
+## What it does
 
-## Current Interfaces
+Ask a research question in plain English → get a grounded answer with cited arXiv sources, generated entirely from a locally-hosted LLM.
 
-- FastAPI docs: `http://localhost:8000/docs`
-- Health check: `http://localhost:8000/health`
-- Chat UI: `http://localhost:8000/chat`
-- Telegram bot: `python -m src.bot`
-- Airflow UI: `http://localhost:8080`
-- OpenSearch: `http://localhost:9200`
+```
+"What are the main approaches to reducing hallucination in RAG systems?"
+        │
+        ▼
+┌───────────────────┐     ┌───────────────────┐     ┌──────────────────┐
+│  Hybrid Search    │ →   │  Evidence Gate    │ →   │  Ollama (local)  │
+│  BM25 + kNN + RRF │     │  reject off-topic │     │  cited answer    │
+└───────────────────┘     └───────────────────┘     └──────────────────┘
+```
+
+New papers from configured categories (`cs.AI`, `cs.LG`, `cs.CL`) are ingested daily via an Airflow pipeline, parsed, chunked, and indexed automatically — the assistant stays current without manual intervention.
+
+![Demo](assets/demo.gif)
+
+---
+
+## Highlights
+
+- 🔎 **Hybrid retrieval** — BM25 keyword search fused with dense vector search (Jina embeddings v3, 1024-dim) via Reciprocal Rank Fusion in OpenSearch, with automatic fallback to BM25-only if the embedding API is unavailable.
+- 🧠 **Agentic RAG workflow** (LangGraph, 7 nodes) — guardrails out-of-scope questions before they hit the LLM, grades retrieved documents for relevance, rewrites the query and retries when evidence is weak, and terminates gracefully rather than hallucinating.
+- 🛡️ **Evidence-sufficiency gate** — even the standard (non-agentic) pipeline checks lexical overlap between the query and retrieved chunks before calling the LLM, avoiding wasted generation on clearly out-of-domain questions.
+- ⚡ **Response caching** — Redis-backed, keyed on the full retrieval configuration (question + filters + model), with silent degradation if Redis is unavailable.
+- 📊 **Full observability** — every request is traced end-to-end in Langfuse (cache lookup → retrieval → context build → generation) as opt-in, zero-config-required instrumentation.
+- 🤖 **Telegram bot** — the same RAG pipeline, accessible from chat, with an allowlist and HTML-formatted, deduplicated source citations.
+- 🔄 **Automated ingestion** — a 5-task Airflow DAG fetches, parses (via Docling), retries failures, and syncs new papers daily on a schedule.
+- 🧩 **Section-aware chunking** — chunks carry paper title + abstract as context headers, so retrieved fragments stay interpretable in isolation — a common failure point in naive RAG chunking.
+
+---
 
 ## Architecture
 
-```text
-arXiv API
-  -> ingestion pipeline
-  -> PDF download + Docling parsing
-  -> PostgreSQL metadata store
-  -> OpenSearch paper + chunk indexes
-  -> BM25 / semantic / hybrid retrieval
-  -> RAG answer generation with Ollama
-  -> FastAPI / browser chat / Telegram
+```
+                              ┌──────────────┐
+                    ┌────────▶│   Airflow    │  daily ingestion (arXiv → Postgres → OpenSearch)
+                    │         └──────────────┘
+                    │
+   ┌────────────┐   │   ┌───────────────┐    ┌──────────────┐
+   │  FastAPI   │ ──┼──▶│  OpenSearch   │───▶│  Jina Embed. │  hybrid search (BM25 + kNN + RRF)
+   │ (4 routers)│   │   │  (BM25+kNN)   │    └──────────────┘
+   └────────────┘   │   └───────────────┘
+        │           │
+        │           │   ┌──────────────┐
+        │           └──▶│  PostgreSQL  │  paper metadata + parsed text
+        │               └──────────────┘
+        ▼
+   ┌────────────┐    ┌──────────────┐    ┌──────────────┐
+   │ LangGraph  │───▶│    Ollama    │    │    Redis     │  response cache
+   │ agentic RAG│    │ (local LLM)  │    │   Langfuse   │  tracing
+   └────────────┘    └──────────────┘    └──────────────┘
+        │
+        ▼
+   Telegram Bot · Browser Chat UI
 ```
 
-Supporting services:
+**Supporting services:**
 
-```text
-PostgreSQL   paper metadata and ingestion state
-OpenSearch   keyword, vector, and hybrid retrieval
-Ollama       local LLM generation
-Redis        response cache
-Langfuse     optional tracing and observability
-Airflow      scheduled ingestion DAG
+| Service | Role |
+|---|---|
+| PostgreSQL | Paper metadata and ingestion state |
+| OpenSearch | Keyword, vector, and hybrid retrieval |
+| Ollama | Local LLM generation |
+| Redis | Response cache |
+| Langfuse | Optional tracing and observability |
+| Airflow | Scheduled ingestion DAG |
+
+---
+
+## Tech stack
+
+Python 3.11 · FastAPI · PostgreSQL · OpenSearch · Redis · Apache Airflow · Ollama · Docling · Jina Embeddings · LangGraph · Langfuse · python-telegram-bot · Docker Compose
+
+---
+
+## Engineering decisions worth noting
+
+- **Graceful degradation everywhere** — every optional dependency (Jina, Redis, Langfuse) fails safe: the core search-and-answer path keeps working with only PostgreSQL, OpenSearch, and Ollama running.
+- **Idempotent ingestion** — re-running the ingestion pipeline never overwrites successfully parsed data with a failed re-parse.
+- **Retry-bounded agentic loop** — the query-rewrite loop has a hard retry limit with an explicit terminal "insufficient evidence" state, preventing infinite loops on ambiguous queries.
+- **Structured output from a small local model** — guardrail scoring, document grading, and query rewriting all coerce structured JSON from a 1B-parameter local model via Ollama's JSON mode, with conservative fallbacks if parsing fails.
+
+<p float="left">
+  <img src="assets/chat-ui.png" width="49%" alt="Browser chat UI" />
+  <img src="assets/agentic-reasoning.png" width="49%" alt="Agentic reasoning steps shown in response" />
+</p>
+
+---
+
+## Project structure
+
 ```
-
-## Tech Stack
-
-- Python 3.11
-- FastAPI
-- PostgreSQL
-- OpenSearch
-- Redis
-- Apache Airflow
-- Ollama
-- Docling
-- Jina embeddings
-- LangGraph
-- Langfuse
-- python-telegram-bot
-- Docker Compose
-
-## Project Structure
-
-```text
 .
 ├── airflow/
 │   └── dags/
 │       └── arxiv_ingestion.py
 ├── docs/
 │   └── telegram_bot.md
-├── notebooks/
+├── notebooks/                  # week-by-week build notebooks
 │   ├── infra-setup.ipynb
 │   ├── data_pipeline.ipynb
-│   ├── keyword-searchi.ipynb
+│   ├── keyword_search.ipynb
 │   ├── hybrid_search.ipynb
 │   ├── complete_rag.ipynb
 │   ├── observability_caching.ipynb
@@ -86,355 +124,205 @@ Airflow      scheduled ingestion DAG
 ├── src/
 │   ├── api/
 │   │   ├── main.py
-│   │   ├── static/
+│   │   ├── static/              # browser chat UI
 │   │   └── routers/
-│   ├── bot/
-│   ├── core/
+│   ├── bot/                     # Telegram bot
+│   ├── core/                    # config, DB, search client init
 │   └── services/
-│       ├── agentic_rag/
-│       ├── arxiv/
+│       ├── agentic_rag/         # LangGraph workflow
+│       ├── arxiv/                # arXiv API client
 │       ├── cache/
 │       ├── embeddings/
-│       ├── indexing/
-│       ├── observability/
+│       ├── indexing/             # chunking
+│       ├── observability/        # Langfuse
 │       ├── ollama/
 │       ├── opensearch/
-│       ├── pdf_parser/
-│       └── rag/
+│       ├── pdf_parser/           # Docling
+│       └── rag/                  # standard pipeline
 ├── tests/
 ├── docker-compose.yml
 ├── Dockerfile
 └── requirements.txt
 ```
 
-## Prerequisites
+---
 
+## Getting started
+
+### Prerequisites
 - Docker Desktop
 - Python 3.11
 - An Ollama-compatible machine with enough memory for the selected model
-- Optional: Jina API key for semantic embeddings
-- Optional: Langfuse account for tracing
-- Optional: Telegram bot token from BotFather
+- Optional: Jina API key (semantic embeddings), Langfuse account (tracing), Telegram bot token (bot interface)
 
-## Environment Setup
-
-Create a local `.env` file:
+### Environment setup
 
 ```bash
 cp .env.example .env
 ```
 
-Important values:
+Key values:
 
-```bash
+```env
 OLLAMA_MODEL=llama3.2:1b
 
-JINA_API_KEY=
+JINA_API_KEY=                     # optional — falls back to BM25-only if empty
 
 REDIS_HOST=localhost
 REDIS_PORT=6379
-REDIS_DB=0
 REDIS_TTL_HOURS=24
 REDIS_ENABLED=true
 
-LANGFUSE_PUBLIC_KEY=
+LANGFUSE_PUBLIC_KEY=              # optional — tracing disabled if empty
 LANGFUSE_SECRET_KEY=
-LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
 LANGFUSE_ENABLED=true
 
 AGENTIC_GUARDRAIL_THRESHOLD=60
 AGENTIC_MAX_RETRIEVAL_ATTEMPTS=2
 AGENTIC_TOP_K=5
-AGENTIC_TEMPERATURE=0.0
 
-TELEGRAM_BOT_TOKEN=
+TELEGRAM_BOT_TOKEN=                # optional — bot disabled if empty
 TELEGRAM_ALLOWED_USER_IDS=
-TELEGRAM_API_BASE_URL=http://localhost:8000
-TELEGRAM_REQUEST_TIMEOUT=60
 TELEGRAM_USE_AGENTIC_RAG=true
 ```
 
-If `JINA_API_KEY` is empty, hybrid search falls back to BM25 where needed.
-
-## Run With Docker Compose
-
-Start the core services and API:
+### Run with Docker Compose
 
 ```bash
+# Core services + API only
 docker compose up -d postgres opensearch redis ollama api
-```
 
-Check health:
-
-```bash
+# Check health
 curl http://localhost:8000/health
-```
 
-Start everything, including Airflow and Telegram bot:
-
-```bash
+# Everything, including Airflow and the Telegram bot
 docker compose up -d
-```
 
-Follow logs:
-
-```bash
+# Follow logs
 docker compose logs -f api
-docker compose logs -f telegram-bot
 ```
 
-Stop services:
-
-```bash
-docker compose down
-```
-
-## Pull the Ollama Model
-
-The API attempts to ensure the configured model is available. You can also pull it manually:
+### Pull the Ollama model
 
 ```bash
 docker exec -it rag-ollama ollama pull llama3.2:1b
-```
-
-List local Ollama models:
-
-```bash
 docker exec -it rag-ollama ollama list
 ```
 
-## API Endpoints
+---
 
-### Health
+## Interfaces
+
+| Interface | URL / Command |
+|---|---|
+| API docs (Swagger) | `http://localhost:8000/docs` |
+| Health check | `http://localhost:8000/health` |
+| Browser chat UI | `http://localhost:8000/chat` |
+| Telegram bot | `python -m src.bot` |
+| Airflow UI | `http://localhost:8080` (default login: `admin` / `admin`) |
+| OpenSearch | `http://localhost:9200` |
+
+The chat UI supports standard and agentic RAG modes, source cards with arXiv links, retrieval metadata, agentic reasoning steps, live service health, category filtering, and a hybrid-search toggle.
+
+---
+
+## API examples
 
 ```bash
-curl http://localhost:8000/health
-```
-
-Returns service status for PostgreSQL, OpenSearch, Ollama, Redis, Langfuse, and embeddings.
-
-### BM25 Search
-
-```bash
+# BM25 keyword search
 curl -X POST http://localhost:8000/api/v1/search/ \
   -H "Content-Type: application/json" \
   -d '{"query":"transformer architecture"}'
-```
 
-### Hybrid Search
-
-```bash
+# Hybrid search (BM25 + kNN)
 curl -X POST http://localhost:8000/api/v1/hybrid-search/ \
   -H "Content-Type: application/json" \
   -d '{"query":"transformer architecture","use_hybrid":true}'
-```
 
-### Standard RAG Answer
-
-```bash
+# Standard RAG answer
 curl -X POST http://localhost:8000/api/v1/ask/ \
   -H "Content-Type: application/json" \
   -d '{"question":"What is the transformer architecture?","use_hybrid":true}'
-```
 
-### Agentic RAG Answer
-
-```bash
+# Agentic RAG answer
 curl -X POST http://localhost:8000/api/v1/ask-agentic/ \
   -H "Content-Type: application/json" \
   -d '{"question":"What is the transformer architecture?"}'
 ```
 
-The agentic endpoint adds a graph-controlled workflow around retrieval and generation:
+The agentic endpoint runs a graph-controlled workflow: guardrail → retrieval → document grading → (optional query rewrite + retry) → grounded answer generation, or an explicit insufficient-evidence response.
 
-- question guardrail
-- retrieval
-- document grading
-- optional query rewriting
-- insufficient-evidence response
-- grounded answer generation
+---
 
-## Ingesting Papers
+## Ingestion
 
-The project includes an Airflow DAG at:
+The Airflow DAG at `airflow/dags/arxiv_ingestion.py`:
+1. Verifies required services are healthy
+2. Fetches arXiv papers for configured categories
+3. Downloads and parses PDFs with Docling
+4. Stores metadata in PostgreSQL
+5. Indexes documents into OpenSearch, retrying failed PDF parses
+6. Generates a run report
 
-```text
-airflow/dags/arxiv_ingestion.py
-```
+Monitor at `http://localhost:8080`.
 
-It is designed to:
+---
 
-- verify required services
-- fetch arXiv papers for configured categories
-- download PDFs
-- parse PDFs with Docling
-- store metadata in PostgreSQL
-- index documents into OpenSearch
-- retry failed PDF parsing
-- generate a run report
+## Telegram bot
 
-Airflow UI:
-
-```text
-http://localhost:8080
-```
-
-Default login from the Compose setup:
-
-```text
-username: admin
-password: admin
-```
-
-## Browser Chat UI
-
-Start the API and open:
-
-```text
-http://localhost:8000/chat
-```
-
-The chat UI supports:
-
-- standard RAG and agentic RAG modes
-- source cards with arXiv links
-- retrieval metadata
-- agentic reasoning steps
-- service health status
-- category filtering
-- hybrid search toggle for the standard endpoint
-
-## Telegram Bot
-
-The Telegram bot calls the FastAPI backend and returns answers directly in Telegram.
-
-Required `.env` value:
-
-```bash
+```env
 TELEGRAM_BOT_TOKEN=your_botfather_token
+TELEGRAM_ALLOWED_USER_IDS=your_numeric_telegram_user_id   # recommended
 ```
-
-Recommended:
 
 ```bash
-TELEGRAM_ALLOWED_USER_IDS=your_numeric_telegram_user_id
+.venv/bin/python -m src.bot          # local
+docker compose up -d telegram-bot     # or via Docker
 ```
 
-Run locally:
+Supported commands: `/start`, `/help`, `/health`, or any plain-text research question. See `docs/telegram_bot.md` for details.
 
-```bash
-.venv/bin/python -m src.bot
-```
-
-Run with Docker Compose:
-
-```bash
-docker compose up -d telegram-bot
-docker compose logs -f telegram-bot
-```
-
-Supported commands:
-
-- `/start`
-- `/help`
-- `/health`
-- any normal text message as a research question
-
-More details: [docs/telegram_bot.md](docs/telegram_bot.md)
-
-## Caching and Tracing
-
-Redis is used to cache repeated RAG responses. Cached responses return quickly and include cache metadata in the API response.
-
-Langfuse tracing is enabled when these values are configured:
-
-```bash
-LANGFUSE_PUBLIC_KEY=
-LANGFUSE_SECRET_KEY=
-LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
-LANGFUSE_ENABLED=true
-```
-
-Tracing is optional. If Langfuse is not configured, the rest of the application still runs.
+---
 
 ## Tests
 
-Run all tests:
-
 ```bash
 .venv/bin/python -m unittest discover -s tests
 ```
 
-Current tests cover:
+Covers: agentic RAG service behavior, out-of-scope handling, document grading and retry flow, Telegram formatting, RAG client endpoint selection, and API error handling.
 
-- agentic RAG service behavior
-- out-of-scope question handling
-- document grading and retry flow
-- Telegram response formatting
-- Telegram RAG client endpoint selection
-- API error handling in the Telegram client
+---
 
-## Development Notes
-
-Install dependencies locally:
+## Development
 
 ```bash
 .venv/bin/python -m pip install -r requirements.txt
-```
-
-Run the FastAPI app locally:
-
-```bash
 .venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Run the Telegram bot locally:
-
-```bash
 .venv/bin/python -m src.bot
 ```
 
-Run tests before pushing:
-
-```bash
-.venv/bin/python -m unittest discover -s tests
-```
+---
 
 ## Troubleshooting
 
-### API is healthy but answers are slow
+**API is healthy but answers are slow** — local LLM generation can take several seconds, especially with agentic retrieval. Repeated questions are faster once Redis caching kicks in.
 
-Local LLM generation can take several seconds, especially with longer context or agentic retrieval. Repeated questions should be faster if Redis caching is enabled.
+**Hybrid search returns BM25 only** — check whether `JINA_API_KEY` is set and whether the chunk index actually contains embeddings.
 
-### Hybrid search returns BM25
+**Telegram bot doesn't reply** — check `docker compose logs -f telegram-bot` and verify the bot token is valid and the container can reach Telegram's API.
 
-Check whether `JINA_API_KEY` is set and whether the chunk index contains embeddings.
+---
 
-### Telegram commands work but questions take time
+## Status & limitations
 
-Question answering calls the RAG endpoint and waits for retrieval plus local LLM generation. `/start`, `/help`, and `/health` are much faster because they do not invoke the LLM.
+This is an actively-developed learning/portfolio project, not a production deployment:
+- Dev-mode configuration (open CORS, disabled OpenSearch security) — not hardened for production
+- No CI/CD pipeline; tests run manually
+- No benchmarked retrieval/answer-quality metrics yet
+  
+---
 
-### Telegram bot cannot reply
+## Acknowledgements
 
-Check:
-
-```bash
-docker compose logs -f telegram-bot
-```
-
-Also verify that the bot token is valid and that the container can reach Telegram's API.
-
-### Docker images are large
-
-The application image includes PDF parsing and ML-related dependencies. This is expected for the current single-image setup.
-
-## Security Notes
-
-- Do not commit `.env`.
-- Rotate a Telegram bot token if it appears in logs or terminal output.
-- Use `TELEGRAM_ALLOWED_USER_IDS` for private bot access.
-- Keep external API keys in local environment variables or deployment secrets.
-
-## License
-
-No license has been specified yet.
+Built while working through the [Mother of AI Project](https://github.com/jamwithai/production-agentic-rag-course) curriculum on production agentic RAG systems, adapted and extended for the arXiv domain.
